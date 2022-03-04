@@ -1,11 +1,11 @@
 strain:
-  Balb/C: "#CCABD8"
-  Balb/C Glowing Head: "#62a766"
-  NSG: "#8474A1"
-  NSG-EGFP: "#833216"
+  Balb/C: "#089896"
+  # Balb/C Glowing Head: "#62a766"
+  NSG: "#CCABD8"
+  # NSG-EGFP: "#833216"
 strain_short:
-  Balb/C: "#CCABD8"
-  NSG: "#8474A1"
+  Balb/C: "#089896"
+  NSG: "#CCABD8"
 source:
   Mouse Primary: "#5890c0"
   Mouse Metastasis: "#62a766"
@@ -16,13 +16,13 @@ cell_type_naila:
   DC: "#b15928"
   Neutrophils: "#a6cee3"
   pericytes: "#009688"
-  Epidermis: "#c4a731"
+  # Epidermis: "#c4a731"
   Endothelial: "#cab2d6"
   CAFs: "#6a3d9a"
   Macrophages: "#ff7f00"
   plasma.cell: "#a6cee3"
   Tumor: "#e31a1c"
-  Other: "#b3b3b3" # grey70
+  # Other: "#b3b3b3" # grey70
 cell_type_multimodal:
   Bcells: "#1f78b4"
   Tcell: "#33a02c"
@@ -78,6 +78,20 @@ tumor_type:
   Primary: "#ff0000"
   Metastasis: "#56B4E9" # palette_OkabeIto[2]
   Unknown: "#999999" # grey60
+sample_id:
+  Balb/C R1: "#0bc8c6"
+  Balb/C R2: "#089896"
+  Balb/C R3: "#056866"
+  NSG R1: "#E1D4DD"
+  NSG R2: "#CCABD8"
+  NSG R3: "#8474A1"
+# sample_id:
+#   SITTD9: "#ee2f00"
+#   SITTE9: "#efea17"
+#   SITTF9: "#6dbe45"
+#   SITTA9: "#35c5f3"
+#   SITTB9: "#5d52a3"
+#   SITTC9: "#ec1472"
 cluster_label:
   T.super:
     CD4.T.naive: "#43A047"
