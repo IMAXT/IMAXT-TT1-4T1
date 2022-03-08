@@ -48,7 +48,7 @@ clrs$cell_type <- clrs$cell_type_naila
 
 ## load data --------------------------------------
 
-scrna_cell_seu <- read_rds("/data/meds1_a/jimaxt/shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+scrna_cell_seu <- read_rds("/home/user/Shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
 
 ```
 
