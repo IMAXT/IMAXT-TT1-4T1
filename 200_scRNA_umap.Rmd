@@ -58,7 +58,7 @@ clrs$cell_type <- clrs$cell_type_naila
 
 ## load data --------------------------------------
 
-scrna_cell_seu <- read_rds("/data/meds1_a/jimaxt/shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+scrna_cell_seu <- read_rds("/home/user/Shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
 
 ```
 
@@ -507,8 +507,8 @@ qc_panel <- ggdraw() +
 
 qc_panel
 
-ggsave_pdf("figures/200_scRNA_umap/002_supplementary_umap.pdf", qc_panel, width = 16, height = 4.5)
-ggsave_png("figures/200_scRNA_umap/002_supplementary_umap.png", qc_panel, width = 16, height = 4.5)
+ggsave_pdf("figures/200_scRNA_umap/002_supplementary_umap.pdf", qc_panel, width = 9, height = 9)
+ggsave_png("figures/200_scRNA_umap/002_supplementary_umap.png", qc_panel, width = 9, height = 9)
 
 ```
 
