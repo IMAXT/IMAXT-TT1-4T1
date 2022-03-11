@@ -130,7 +130,7 @@ scrna_sample_tbl <- scrna_cell_tbl %>%
 
 ```{r, fig.width=3.5, fig.height=8, results="asis"}
 
-cell_types <- names(clrs$cell_type_naila)
+cell_types <- unique(scrna_sample_tbl$cell_type)
 
 for(i in 1:length(cell_types)){
   
@@ -391,7 +391,7 @@ source("src/comp_plot.R")
 ## scRNA per patient comps
 plist_scrna <- default_comp_grid_list(
   scrna_sample_tbl,
-  cell_type, "Bcells", cell_type, facet = sample_id,
+  cell_type, "B.cell", cell_type, facet = sample_id,
   site_box = F, vec_plot = F, mutsig_box = F, strain_tiles = T, mutsig_tiles = F)
 
 lvls <- scrna_sample_tbl %>%
