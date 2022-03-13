@@ -4,13 +4,16 @@ subtitle: "IMAXT"
 author:
   - "Ignacio Vazquez-Garcia"
 date: "`r Sys.Date()`"
-output:
-  bookdown::html_document2:
-    includes:
-      in_header: header.html
-  bookdown::gitbook:
-    includes:
-      in_header: header.html
+output: 
+  html_document:
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+    fig_align: center
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: yes
 editor_options: 
   chunk_output_type: inline
 ---
@@ -63,10 +66,14 @@ scrna_cell_tbl$cell_id <- rownames(scrna_cell_seu@meta.data)
 ```{r}
 
 scrna_sample_tbl <- scrna_cell_tbl %>%
-  mutate(cell_type = as.character(cell_type),
-         sample_id = orig.ident,
-         strain = exp) %>%
-  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  mutate(
+    cell_type = as.character(cell_type),
+    sample_id = orig.ident,
+    strain = exp) %>%
+  mutate(
+    sample_id = recode(sample_id, `SITTD9` = "Balb/C R1", `SITTE9` = "Balb/C R2", `SITTF9` = "Balb/C R3", 
+                       `SITTA9` = "NSG R1", `SITTB9` = "NSG R2", `SITTC9` = "NSG R3"),
+    strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
   group_by(sample_id, strain, cell_type) %>%
   summarize(cell_type_count = n_distinct(cell_id)) %>% 
   mutate(
@@ -95,7 +102,10 @@ scrna_sample_tbl <- scrna_cell_tbl %>%
          sample_id = orig.ident,
          strain = exp,
          sort_short_x = "") %>%
-  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  mutate(
+    sample_id = recode(sample_id, `SITTD9` = "Balb/C R1", `SITTE9` = "Balb/C R2", `SITTF9` = "Balb/C R3", 
+                       `SITTA9` = "NSG R1", `SITTB9` = "NSG R2", `SITTC9` = "NSG R3"),
+    strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
   group_by(sample_id, strain, cell_type, sort_short_x) %>%
   tally() %>%
   ungroup() %>%
@@ -376,32 +386,32 @@ for(i in 1:length(cell_types)){
 
 ```{r, fig.width=4, fig.height=8}
 
-# source("src/comp_plot.R")
-# 
-# ## scRNA per patient comps
-# plist_scrna <- default_comp_grid_list(
-#   scrna_sample_tbl, 
-#   cell_type, "Bcells", cell_type, facet = sample_id, 
-#   site_box = F, vec_plot = F, mutsig_box = F, strain_tiles = T, mutsig_tiles = F)
-# 
-# lvls <- scrna_sample_tbl %>% 
-#   rank_by(cell_type, "Tumor", cell_type) %>% 
-#   distinct(sample_id, sample_id_lvl)
-# 
-# pgrid_supplement <- plot_grid(plist_scrna$pbar1 +
-#                                theme(strip.text.x = element_text(angle = 90)) +
-#                                labs(y = "# cells\n"),
-#                               plist_scrna$pbar2 + labs(y = "% cells\n(cell type)"),
-#                               plist_scrna$ptiles2,
-#                               plist_scrna$ptiles1,
-#                               ncol = 1, align = "v", axis = "x",
-#                               rel_heights = c(0.3, 0.3, 0.05, 0.05))
+source("src/comp_plot.R")
 
-# pgrid_supplement
- 
-# ggsave_pdf(filename = "figures/210_cohort_cell_type_composition/210_comp_grid_per_patient.pdf",
-#            pgrid_supplement_full, width = 21, height = 18)
-# ggsave_png(filename = "figures/210_cohort_cell_type_composition/210_comp_grid_per_patient.png",
-#            pgrid_supplement_full, width = 21, height = 18)
+## scRNA per patient comps
+plist_scrna <- default_comp_grid_list(
+  scrna_sample_tbl,
+  cell_type, "Bcells", cell_type, facet = sample_id,
+  site_box = F, vec_plot = F, mutsig_box = F, strain_tiles = T, mutsig_tiles = F)
+
+lvls <- scrna_sample_tbl %>%
+  rank_by(cell_type, "Tumor", cell_type) %>%
+  distinct(sample_id, sample_id_lvl)
+
+pgrid_supplement <- plot_grid(plist_scrna$pbar1 +
+                               theme(strip.text.x = element_text(angle = 90)) +
+                               labs(y = "# cells\n"),
+                              plist_scrna$pbar2 + labs(y = "% cells\n(cell type)"),
+                              plist_scrna$ptiles2,
+                              plist_scrna$ptiles1,
+                              ncol = 1, align = "v", axis = "x",
+                              rel_heights = c(0.3, 0.3, 0.05, 0.05))
+
+pgrid_supplement
+
+ggsave_pdf(filename = "figures/210_scRNA_cell_type_composition/210_comp_grid_per_animal.pdf",
+           pgrid_supplement, width = 4, height = 8)
+ggsave_png(filename = "figures/210_scRNA_cell_type_composition/210_comp_grid_per_animal.png",
+           pgrid_supplement, width = 4, height = 8)
 
 ```

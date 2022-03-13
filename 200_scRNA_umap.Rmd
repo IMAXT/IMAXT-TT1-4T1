@@ -1,0 +1,521 @@
+---
+title: "Cell type embeddings"
+subtitle: "IMAXT"
+author:
+  - "Ignacio Vazquez-Garcia"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+    fig_align: center
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: yes
+params:
+   rmd: "200_scRNA_umap.Rmd"
+---
+
+```{r, include=FALSE}
+
+# knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+# knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = F)
+
+```
+
+```{r}
+
+library(magrittr)
+library(tidyverse)
+library(Seurat)
+library(readxl)
+library(cowplot)
+library(viridis)
+library(knitr)
+
+```
+
+# Cohort UMAP
+
+```{r}
+
+## load global vars: 
+source("src/global_vars.R")
+
+# scrna_meta_tbl
+# clrs
+# markers_v7
+# markers_v7_super
+# cell_type_super_lookup
+
+clrs$cell_type <- clrs$cell_type_naila
+
+```
+
+```{r}
+
+## load data --------------------------------------
+
+scrna_cell_seu <- read_rds("/data/meds1_a/jimaxt/shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+
+```
+
+```{r}
+
+## prepare cohort_embeddings
+scrna_cell_tbl <- scrna_cell_seu@meta.data %>%
+  mutate(
+    cell_type = as.character(cell_type),
+    sample_id = orig.ident,
+    strain = exp) %>%
+  mutate(
+    sample_id = recode(sample_id, `SITTD9` = "Balb/C R1", `SITTE9` = "Balb/C R2", `SITTF9` = "Balb/C R3", 
+                       `SITTA9` = "NSG R1", `SITTB9` = "NSG R2", `SITTC9` = "NSG R3"),
+    strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG"))
+scrna_cell_tbl$cell_id <- rownames(scrna_cell_seu@meta.data)
+scrna_cell_tbl <- bind_cols(scrna_cell_tbl, data.frame(scrna_cell_seu@reductions$DSBwnn.umap@cell.embeddings))
+scrna_cell_tbl$UMAP_1 <- scrna_cell_tbl$DSBwnnUMAP_1
+scrna_cell_tbl$UMAP_2 <- scrna_cell_tbl$DSBwnnUMAP_2
+
+```
+
+## UMAPs
+
+```{r, fig.width=7.25, fig.height=8}
+
+dpi <- 72
+rw <- 10
+rh <- 10
+
+base_umap <- ggplot(scrna_cell_tbl) +
+  coord_fixed() +
+  NoAxes() +
+  theme(legend.position = c(0, 1),
+        legend.justification = c("left", "top"),
+        legend.box.just = "left",
+        legend.margin = ggplot2::margin(1, 1, 1, 1),
+        #panel.border = element_rect(linetype = 1, color = "black", size = 1),
+        legend.text = element_text(size = 14, margin = ggplot2::margin(0, 10, 0, 0)),
+        legend.spacing.x = unit(0, "npc"), 
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, face = "plain", size = 22))
+
+pt.size <- 1
+pt.size.mini <- 0.01
+pt.alpha <- 1
+pt.alpha.mini <- 0.02
+
+# median_tbl <- scrna_cell_tbl %>% 
+#   filter(cell_type != "Other") %>% 
+#   group_by(cell_type, reduction) %>% 
+#   summarise(UMAP_1 = median(UMAP_1),
+#             UMAP_2 = median(UMAP_2))
+
+ncol1_legend <- list(
+  guides(color = guide_legend(override.aes = list(size = 4, alpha = 1),
+                              ncol = 1, 
+                              label.position = "right")),
+  theme(legend.text = element_text(size = 14, margin = ggplot2::margin(0, 10, 9.5, 0), color = "white"),
+        legend.spacing.x = unit(0, "npc"))
+)
+
+umap_site <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = strain), size = pt.size.mini, alpha = pt.alpha.mini) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = strain), size = pt.size.mini, alpha = pt.alpha.mini, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  scale_color_manual(values = clrs$strain) +
+  guides(color = guide_legend(override.aes = list(size = 4, alpha = 1),
+                              ncol = 2, 
+                              label.position = "right"))
+
+
+umap_site_mini <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = strain), size = pt.size.mini, alpha = pt.alpha.mini) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = strain), size = pt.size.mini, alpha = pt.alpha.mini, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  scale_color_manual(values = clrs$strain) +
+  guides(color = F)
+
+umap_site_legend_ncol1 <- cowplot::get_legend(umap_site + ncol1_legend)
+umap_site_legend <- cowplot::get_legend(umap_site)
+
+umap_cell_type <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = fct_rev(cell_type)), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = fct_rev(cell_type)), size = pt.size, alpha = pt.alpha, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  # scale_color_manual(values = clrs$cell_type) +
+  ncol1_legend
+
+umap_cell_type_mini <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = cell_type), size = pt.size.mini, alpha = pt.alpha.mini) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = cell_type), size = pt.size.mini, alpha = pt.alpha.mini, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  scale_color_manual(values = clrs$cell_type) +
+  guides(color = F)
+
+umap_cell_type_legend <- cowplot::get_legend(umap_cell_type)
+
+umap_patient <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = sample_id), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = sample_id), size = pt.size, alpha = pt.alpha, raster.dpi = 200, raster.width = 10, raster.height = 10) +
+  scale_color_manual(values = clrs$sample_id) +
+  guides(color = guide_legend(override.aes = list(size = 4, alpha = 1),
+                              nrow = 17, 
+                              label.position = "right")) +
+  theme(legend.text = element_text(size = 14, margin = ggplot2::margin(0, 10, 0, 0)),
+        legend.spacing.x = unit(0, "npc"))
+
+umap_patient_mini <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = sample_id), size = pt.size.mini, alpha = pt.alpha.mini) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = sample_id), size = pt.size.mini, alpha = pt.alpha.mini, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  scale_color_manual(values = clrs$sample_id) +
+  guides(color = F)
+
+# umap_patient_legend <- cowplot::get_legend(umap_patient)
+
+umap_phase <- base_umap +
+  geom_point(aes(UMAP_1, UMAP_2, color = Phase), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = Phase), size = pt.size, alpha = pt.alpha, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  scale_color_manual(values = clrs$Phase) +
+  guides(color = guide_legend(override.aes = list(size = 4, alpha = 1),
+                              ncol = 1,
+                              label.position = "right")) +
+  theme(legend.text = element_text(size = 14, margin = ggplot2::margin(0, 10, 0, 0)),
+        legend.spacing.x = unit(0, "npc")) +
+  labs(title = "Phase", color = "")
+
+continuous_umap_layers <- list(
+  scale_color_viridis_c(),
+  guides(color = guide_colorbar(label.position = "right",
+                                title.position = "top",
+                                title.hjust = 0,
+                                title.vjust = 1,
+                                direction = "vertical")),
+  theme(legend.title = element_text(face = "bold", size = 14),
+        legend.key.height = unit(0.05, "npc"),
+        legend.key.width = unit(0.03, "npc"),
+        legend.position = c(-0.07, 1),
+        legend.justification = c("left", "top"),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5, face = "plain", size = 18)))
+
+umap_umis <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = log2(nCount_RNA)), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = log2(nCount_RNA)), size = pt.size, alpha = pt.alpha, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  labs(title = "log2(#UMIs)", color = "") +
+  continuous_umap_layers
+
+umap_genes <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = log2(nFeature_RNA)), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = log2(nFeature_RNA)), size = pt.size, alpha = pt.alpha, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  labs(title = "log2(#Genes)", color = "") +
+  continuous_umap_layers
+
+umap_mitos <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = percent.mt), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = percent.mt), size = pt.size, alpha = pt.alpha, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  labs(title = "MT reads [%]", color = "") +
+  continuous_umap_layers
+
+umap_doublet_score <- base_umap + 
+  geom_point(aes(UMAP_1, UMAP_2, color = doublet_score), size = pt.size, alpha = pt.alpha) +
+  # ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = doublet_score), size = pt.size, alpha = pt.alpha, raster.dpi = dpi, raster.width = rw, raster.height = rh) +
+  labs(title = "Doublet score", color = "") +
+  continuous_umap_layers
+
+```
+
+## Cell count 
+
+```{r, fig.width=2.75, fig.height=8}
+
+total_numbers_plot <- function(column_var) {
+  column_var <- enquo(column_var)
+  plot_data <- scrna_cell_tbl %>% 
+    filter(cell_type != "Other") %>%
+    group_by(!!column_var) %>%
+    tally %>%
+    arrange(n) %>%
+    mutate(column_label = paste0(!!column_var, " (", format(n, trim=T, big.mark=","), ")")) %>% 
+    mutate(!!column_var := ordered(!!column_var, levels = unique(!!column_var)))
+  
+  common_layers <- list(
+    scale_y_continuous(expand = c(0, 0)),
+    guides(fill = F, color = F),
+    coord_flip(clip = "off"),
+    theme(axis.title = element_blank(),
+          axis.text = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          plot.title = element_text(face = "plain"))
+  )
+  
+  p1 <- ggplot(plot_data) +
+    geom_point(aes(!!column_var, 0, color = !!column_var), size = 4) +
+    scale_color_manual(values = clrs[[as_label(column_var)]]) +
+    common_layers 
+    
+  p2 <- ggplot(plot_data) +
+    geom_bar(aes(!!column_var, n, fill = !!column_var), stat = "identity", width = 0.3) +
+    geom_text(aes(!!column_var, 1, label = column_label), hjust = 0, vjust = 0, nudge_x = 0.2) +
+    scale_fill_manual(values = clrs[[as_label(column_var)]]) +
+    common_layers 
+  
+  plot_grid(p1, p2, align = "v", ncol = 2, rel_widths = c(0.03, 0.97))
+  
+}
+
+numbers_plot_cell_type <- total_numbers_plot(cell_type)
+numbers_plot_strain <- total_numbers_plot(strain)
+numbers_plot_sample <- total_numbers_plot(sample_id)
+
+```
+
+## Composite figure
+
+```{r, fig.width=5, fig.height=5}
+
+p <- ggdraw() +
+  ## left
+  draw_label("Strain", x = 0.5, y = 0.98, size = 20) +
+  draw_plot(add_umap_coord(umap_site), x = 0, y = 0, width = 1, height = 0.95) +
+  draw_label(paste0("n = ", nrow(scrna_cell_tbl)), 
+             x = 0.5, y = 0.03, size = 16, hjust = 0)
+
+p
+
+ggsave_pdf(filename = "figures/200_scRNA_umap/002_cohort_umap_strain.pdf", p, width = 5, height = 5)
+ggsave_png(filename = "figures/200_scRNA_umap/002_cohort_umap_strain.png", p, width = 5, height = 5)
+
+```
+
+```{r, fig.width=5, fig.height=3.5}
+
+p <- ggdraw() +
+  ## right upper
+  # draw_plot(mixing_plot_cell_type, x = 0.5+0.5*0, y = 0.66, width = 0.5*0.3, height = 0.33) +
+  draw_label("Cell type", x = 0.4, y = 0.95, size = 20, hjust = 0) +
+  draw_plot(numbers_plot_cell_type, x = 0, y = 0, width = 0.48, height = 0.9) +
+  draw_plot(add_umap_coord(umap_cell_type_mini), x = 0.5, y = 0, width = 0.48, height = 0.9)
+
+p
+
+ggsave_pdf(filename = "figures/200_scRNA_umap/002_cohort_umap_cell_type.pdf", p, width = 5, height = 3.5)
+ggsave_png(filename = "figures/200_scRNA_umap/002_cohort_umap_cell_type.png", p, width = 5, height = 3.5)
+
+```
+
+```{r, fig.width=6, fig.height=3}
+
+p <- ggdraw() +
+  ## right middle
+  draw_label("Strain / Replicate", x = 0.4, y = 0.95, size = 20, hjust = 0) + 
+  draw_plot(numbers_plot_sample, x = 0, y = 0, width = 0.48, height = 0.9) +
+  draw_plot(add_umap_coord(umap_patient_mini), x = 0.5, y = 0, width = 0.48, height = 0.9)
+
+p
+
+ggsave_pdf(filename = "figures/200_scRNA_umap/002_cohort_umap_replicate.pdf", p, width = 5, height = 3)
+ggsave_png(filename = "figures/200_scRNA_umap/002_cohort_umap_replicate.png", p, width = 5, height = 3)
+
+```
+
+### v1
+
+```{r, fig.width=10, fig.height=5}
+
+arrow <- arrow(angle = 20, type = "closed", length = unit(0.1, "npc"))
+umap_coord_anno <- ggplot(tibble(group = c("UMAP1", "UMAP2"),
+                                 x = c(0, 0), xend = c(1, 0),
+                                 y = c(0, 0), yend = c(0, 1),
+                                 lx = c(0.5, -0.15), ly = c(-0.15, 0.5),
+                                 angle = c(0, 90))) +
+  geom_segment(aes(x, y, xend = xend, yend = yend, group = group),
+               arrow = arrow, size = 1, lineend = "round") +
+  geom_text(aes(lx, ly, label = group, angle = angle), size = 4) +
+  theme_void() +
+  coord_fixed(xlim = c(-0.3, 1), ylim = c(-0.3, 1))
+
+add_umap_coord <- function(gg_obj) {
+  p <- ggdraw() + 
+    draw_plot(gg_obj, x = 0, y = 0, width = 1, height = 1) +
+    draw_plot(umap_coord_anno, x = -0.015, y = -0.02, width = 0.2, height = 0.2)
+  return(p)
+}
+
+full_grid1 <- ggdraw() +
+  ## left
+  draw_label("Replicate", x = 0.25, y = 0.98, size = 20) +
+  draw_plot(add_umap_coord(umap_site), x = 0, y = 0, width = 0.5, height = 1) +
+  draw_label(paste0("n = ", nrow(scrna_cell_tbl)), 
+             x = 0.25, y = 0.03, size = 16, hjust = 0) + 
+  ## right upper
+  # draw_plot(mixing_plot_cell_type, x = 0.5+0.5*0, y = 0.66, width = 0.5*0.3, height = 0.33) +
+  draw_label("Cell type", x = 0.75, y = 0.98, size = 20, hjust = 0) +
+  draw_plot(numbers_plot_cell_type, x = 0.5, y = 0.5, width = 0.15, height = 0.48) +
+  draw_plot(umap_cell_type_mini, x = 0.8, y = 0.5, width = 0.25, height = 0.48) +
+  ## right middle
+  draw_label("Strain", x = 0.75, y = 0.6, size = 20, hjust = 0) + 
+  draw_plot(numbers_plot_sample, x = 0.5, y = 0, width = 0.15, height = 0.48) +
+  draw_plot(umap_patient_mini, x = 0.8, y = 0, width = 0.25, height = 0.48)
+  ## right lower
+  # draw_grob(umap_site_legend, x = 0.52+0.5*0.66, y = -0.67, hjust = 0, vjust = 0)
+
+full_grid1
+
+ggsave_pdf(filename = "figures/200_scRNA_umap/002_cohort_umaps_v1.pdf", full_grid1, width = 20, height = 10)
+ggsave_png(filename = "figures/200_scRNA_umap/002_cohort_umaps_v1.png", full_grid1, width = 20, height = 10)
+
+```
+
+### v2
+
+```{r chunk_200_065, fig.width=20, fig.height=10}
+
+full_grid2 <- ggdraw() +
+  ## left
+  draw_label("Patient", x = 0.25, y = 0.98, size = 20) +
+  draw_plot(add_umap_coord(umap_patient), x = 0, y = 0, width = 0.5, height = 1) +
+  draw_label(paste0("n = ", nrow(scrna_cell_tbl)), 
+             x = 0.25, y = 0.03, size = 16, hjust = 0) + 
+  ## right upper
+  # draw_plot(mixing_plot_cell_type, x = 0.5+0.5*0, y = 0.66, width = 0.5*0.3, height = 0.33) +
+  draw_label("Cell type", x = 0.725, y = 0.98, size = 20, hjust = 0) +
+  draw_plot(umap_cell_type_mini, x = 0.83, y = 0.68, width = 0.5*1/3, height = 0.31) +
+  draw_plot(numbers_plot_cell_type, x = 0.715, y = 0.651, width = 0.13, height = 0.315) +
+  ## right middle
+  # draw_label("TCGA", x = 0.53+0.5*0, y = 0.6, size = 20, hjust = 0) +
+  # draw_plot(umap_consOV_mini, x = 0.5+0.5*0, y = 0.3, width = 0.5*1/3, height = 0.31) +
+  # draw_label("Site", x = 0.725, y = 0.6, size = 20, hjust = 0) +
+  # draw_plot(numbers_plot_tumor_supersite, x = 0.715, y = 0.34, width = 0.13, height = 0.25) +
+  draw_plot(umap_site_mini, x = 0.5+0.5*0.66, y = 0.3, width = 0.5*1/3, height = 0.31)
+  ## right lower
+  # draw_plot(tcga_heat + guides(fill = F), x = 0.49+0.5*0, y = -0.03, width = 0.18, height = 0.3) +
+  # draw_grob(tcga_heat_legend, x = 0.68, y = -0.35) +
+  # draw_grob(umap_consOV_legend, x = 0.52+0.5*0, y = -0.67, hjust = 0, vjust = 0)
+
+full_grid2
+full_grid2_rds <- list(rds = full_grid2, width = 20, height = 10)
+
+ggsave_pdf(filename = "figures/200_scRNA_umap/002_cohort_umaps_v2.pdf", full_grid2, width = 20, height = 10)
+ggsave_png(filename = "figures/200_scRNA_umap/002_cohort_umaps_v2.png", full_grid2, width = 20, height = 10)
+
+```
+
+### v3
+
+```{r, fig.width=20, fig.height=10}
+
+full_grid3 <- ggdraw() +
+  ## left
+  draw_label("Patient", x = 0.25, y = 0.98, size = 20) +
+  draw_plot(add_umap_coord(umap_patient), x = 0, y = 0, width = 0.5, height = 1) +
+  draw_label(paste0("n = ", nrow(scrna_cell_tbl)), 
+             x = 0.25, y = 0.03, size = 16, hjust = 0) + 
+  ## right upper
+  draw_label("Cell type", x = 0.53+0.5*0, y = 0.98, size = 20, hjust = 0) +
+  draw_plot(numbers_plot_cell_type, x = 0.52+0.5*0 , y = 0.651, width = 0.13, height = 0.315) +
+  draw_plot(umap_cell_type_mini, x = 0.64, y = 0.68, width = 0.5*1/3, height = 0.31) +
+  # draw_plot(mixing_plot_cell_type, x = 0.83, y = 0.66, width = 0.5*0.3, height = 0.33) +
+  ## right middle
+  # draw_label("TCGA", x = 0.53+0.5*0, y = 0.6, size = 20, hjust = 0) +
+  # draw_plot(umap_consOV_mini, x = 0.5+0.5*0, y = 0.3, width = 0.5*1/3, height = 0.31) +
+  draw_label("Site", x = 0.725, y = 0.6, size = 20, hjust = 0) +
+  # draw_plot(numbers_plot_tumor_supersite, x = 0.715, y = 0.34, width = 0.13, height = 0.25) +
+  draw_plot(umap_site_mini, x = 0.5+0.5*0.66, y = 0.3, width = 0.5*1/3, height = 0.31)
+  ## right lower
+  # draw_plot(tcga_heat + guides(fill = F), x = 0.49+0.5*0, y = -0.03, width = 0.18, height = 0.3) +
+  # draw_grob(tcga_heat_legend, x = 0.68, y = -0.35) +
+  # draw_grob(umap_consOV_legend, x = 0.52+0.5*0, y = -0.67, hjust = 0, vjust = 0)
+
+full_grid3
+full_grid3_rds <- list(rds = full_grid3, width = 20, height = 10)
+
+ggsave_pdf(filename = "figures/200_scRNA_umap/002_cohort_umaps_v3.pdf", full_grid3, width = 20, height = 10)
+ggsave_png(filename = "figures/200_scRNA_umap/002_cohort_umaps_v3.png", full_grid3, width = 20, height = 10)
+
+```
+
+## QC
+
+```{r chunk_200_104, fig.width=3, fig.height=4}
+
+## QC histograms
+qc_tbl <- scrna_cell_tbl %>%
+  mutate(`log2(#UMIs)` = log2(nCount_RNA),
+         `log2(#Genes)` = log2(nFeature_RNA),
+         `log2(#UMIs/#Genes)` = `log2(#UMIs)`-`log2(#Genes)`,
+         `MT reads [%]` = percent.mt) %>%
+  select(`log2(#UMIs)`,
+         `log2(#Genes)`,
+         # `log2(#UMIs/#Genes)`,
+         `MT reads [%]`, cell_type) %>%
+  gather(key, value, -cell_type) %>%
+  group_by(key) %>%
+  mutate(median_value = median(value))
+
+qc_tbl <- bind_rows(qc_tbl, mutate(qc_tbl, cell_type = "All cell types")) %>%
+  mutate(cell_type = ordered(cell_type,
+                             levels = rev(c("All cell types", names(clrs$cell_type)))))
+
+qc_plot <- ggplot(qc_tbl) +
+  geom_violin(aes(cell_type, value, fill = cell_type),
+              color = "white", width = 1) +
+  geom_boxplot(aes(cell_type, value, color = cell_type),
+               width = 0.15, size = 1, fill = NA, outlier.shape = NA) +
+  geom_boxplot(aes(cell_type, value), fill = NA,
+               width = 0.15, color = "white", outlier.shape = NA) +
+  geom_hline(aes(yintercept = median_value),
+             data = distinct(qc_tbl, key, median_value)) +
+  facet_wrap(~key, scales = "free_x", strip.position = "bottom") +
+  scale_fill_manual(values = c(clrs$cell_type, `All cell types` = "grey10"),
+                    guide = F) +
+  scale_color_manual(values = c(clrs$cell_type, `All cell types` = "grey10"),
+                     guide = F) +
+  coord_flip() +
+  theme(axis.title = element_blank(),
+        strip.placement = "outside")
+
+```
+
+```{r chunk_200_105, fig.width=9, fig.height=9}
+
+custom_guide <- guide_legend(override.aes = list(size = 4, alpha = 1), 
+                             ncol = 1, label.position = "right")
+
+cell_type_legend <- cowplot::get_legend(umap_cell_type + theme(legend.title=element_text(), legend.text = element_text(size = 14, margin = ggplot2::margin(0, 10, 0, 0), color = "black")) + labs(color = "Cell type scRNA") + guides(color = custom_guide))
+site_legend <- cowplot::get_legend(umap_site + theme(legend.title=element_text()) + labs(color = "Site") + guides(color = custom_guide))
+
+umap_legend_theme <- theme(
+  legend.position = c(0, 1),
+  legend.justification = c("left", "top"),
+  legend.box.just = "left",
+  legend.margin = ggplot2::margin(1, 1, 1, 1),
+  #panel.border = element_rect(linetype = 1, color = "black", size = 1),
+  legend.text = element_text(size = 14, margin = ggplot2::margin(0, 10, 0, 0)),
+  legend.spacing.x = unit(0, "npc")
+)
+
+qc_panel <- ggdraw() +
+  draw_plot(add_umap_coord(umap_umis), width = 0.33, height = 0.48, x = 0.01, y = 0.5) +
+  draw_plot(add_umap_coord(umap_genes), width = 0.33, height = 0.48, x = 0.34, y = 0.5) +
+  draw_plot(add_umap_coord(umap_mitos), width = 0.33, height = 0.48, x = 0.68, y = 0.5) +
+  # draw_plot(add_umap_coord(umap_phase), width = 0.24, height = 0.48, x = 0.25, y = 0) +
+  draw_plot(qc_plot, width = 1, height = 0.5, x = 0.01, y = 0) +
+  # draw_grob(site_legend, x = 0.7, y = 0.48, hjust = 0, vjust = 1) +
+  # draw_grob(cell_type_legend, x = 0.85, y = 0.48, hjust = 0, vjust = 1) +
+  draw_label("A", x = 0.01, y = 0.98, fontface = "bold", size = 22) +
+  draw_label("B", x = 0.01, y = 0.48, fontface = "bold", size = 22)
+  # draw_label("C", x = 0.52, y = 0.48, fontface = "bold", size = 22)
+
+qc_panel
+
+ggsave_pdf("figures/200_scRNA_umap/002_supplementary_umap.pdf", qc_panel, width = 16, height = 4.5)
+ggsave_png("figures/200_scRNA_umap/002_supplementary_umap.png", qc_panel, width = 16, height = 4.5)
+
+```
+
+## Session info 
+
+```{r}
+
+devtools::session_info()
+
+```
