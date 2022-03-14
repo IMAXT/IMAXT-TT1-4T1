@@ -1,0 +1,414 @@
+---
+title: "230_scRNA_Cancer_cell_composition"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r chunk_210_010}
+library(magrittr)
+library(tidyverse)
+library(Seurat)
+library(readxl)
+library(cowplot)
+library(viridis)
+library(tibble)
+library(purrr)
+library(stringr)
+library(ggplot2)
+library(data.table)
+library(cowplot)
+library(RColorBrewer)
+library(emmeans)
+
+```
+
+```{r}
+
+## load global vars: 
+source("src/global_vars.R")
+
+
+# names(clrs$cluster_label$Ovarian.cancer.cell)=names(table(Tumor$MultimodalClusters))
+# clrs$cell_type_naila <- clrs$cluster_label$Ovarian.cancer.cell
+```
+
+```{r}
+
+## load data --------------------------------------
+
+seur <- read_rds("/home/user/Shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+Idents(seur)="cell_type"
+# subset to tumor cells
+Tumor=subset(seur, idents="Cancer.cell")
+Tumor@meta.data$MultimodalClusters=droplevels(Tumor@meta.data$MultimodalClusters)
+Idents(Tumor)=Tumor$MultimodalClusters
+scrna_cell_seu=Tumor
+
+```
+
+
+set up colors to use for the subclusters
+using the ovarian cancer cell colors from the list
+```{r}
+## load global vars: 
+source("src/global_vars.R")
+names(clrs$cluster_label$Ovarian.cancer.cell)=names(table(Tumor$MultimodalClusters))
+clrs$cell_type <- clrs$cluster_label$Ovarian.cancer.cell
+```
+
+```{r}
+
+## join data
+scrna_cell_tbl <- scrna_cell_seu@meta.data
+scrna_cell_tbl$cell_id <- rownames(scrna_cell_seu@meta.data)
+# put the multimodals in the celltype column to reuse the same code
+scrna_cell_tbl$cell_type=Tumor$MultimodalClusters
+
+scrna_sample_tbl <- scrna_cell_tbl %>%
+  mutate(cell_type = as.character(cell_type),
+         sample_id = orig.ident,
+         strain = exp) %>%
+  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  group_by(sample_id, strain, cell_type) %>%
+  summarize(cell_type_count = n_distinct(cell_id)) %>% 
+  mutate(
+      other_cell_type_count = sum(cell_type_count) - cell_type_count,
+      total_cell_type_count = sum(cell_type_count),
+      cell_type_proportion = cell_type_count/total_cell_type_count*100
+      ) %>%
+  ungroup 
+
+```
+
+## scRNA compositions {.tabset}
+
+```{r, fig.width=8, fig.height=4}
+
+source("src/comp_plot.R")
+# rank_by()
+
+add_helper_columns <- . %>% 
+  mutate(label_strain = "Strain",
+         label_therapy = "Rx",
+         label_mutsig = "Signature")
+
+scrna_sample_tbl <- scrna_cell_tbl %>%
+  mutate(cell_type = as.character(cell_type),
+         sample_id = orig.ident,
+         strain = exp,
+         sort_short_x = "") %>%
+  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  group_by(sample_id, strain, cell_type, sort_short_x) %>%
+  tally() %>%
+  ungroup() %>%
+  # Pad cell type combinations with zero counts in the data
+  complete(cell_type,
+           nesting(sample_id, strain),
+           fill = list(n = 0)) %>%
+  group_by(sample_id, strain) %>%
+  mutate(nrel = n/sum(n)*100) %>% 
+  add_helper_columns %>% 
+  mutate(strain = ordered(strain, levels = rev(names(clrs$strain)))) %>%
+  group_by(sample_id) %>% 
+  mutate(ntotal = sum(n)) %>% 
+  filter(ntotal > 0) %>%
+  ungroup()
+
+```
+
+
+
+```{r, fig.width=3.5, fig.height=8, results="asis"}
+
+cell_types <- unique(scrna_sample_tbl$cell_type)
+
+for(i in 1:length(cell_types)){
+  
+  cat('##### ', cell_types[i],' \n')
+  
+  plist <- default_comp_grid_list(
+    scrna_sample_tbl, 
+    cell_type, cell_types[i], cell_type, 
+    mutsig_box = F, vec_plot = F)
+  
+  p <- plot_grid(plotlist = plist, ncol = 1, align = "v",
+                 rel_heights = c(0.13, 0.13, 0.13))
+  
+  print(p)
+  
+  cat(' \n \n')
+  
+  print(knitr::kable(wilcoxon_tests(scrna_sample_tbl, 
+                                    cell_type, cell_types, strain)))
+  
+  cat(' \n \n')
+  
+}
+
+```
+
+
+
+```{r, fig.width=4, fig.height=8}
+
+source("src/comp_plot.R")
+## scRNA per patient comps
+plist_scrna <- default_comp_grid_list(
+  scrna_sample_tbl,
+  cell_type, "Lgals1.Tumor", cell_type, facet = sample_id,
+  site_box = F, vec_plot = F, mutsig_box = F, strain_tiles = T, mutsig_tiles = F)
+lvls <- scrna_sample_tbl %>%
+  rank_by(cell_type, "Tumor", cell_type) %>%
+  distinct(sample_id, sample_id_lvl)
+pgrid_supplement <- plot_grid(plist_scrna$pbar1 +
+                               theme(strip.text.x = element_text(angle = 90)) +
+                               labs(y = "# cells\n"),
+                              plist_scrna$pbar2 + labs(y = "% cells\n(cell type)"),
+                              plist_scrna$ptiles2,
+                              plist_scrna$ptiles1,
+                              ncol = 1, align = "v", axis = "x",
+                              rel_heights = c(0.3, 0.3, 0.05, 0.05))
+pgrid_supplement
+
+ ggsave_pdf(filename = "figures/230_scRNA_Cancer_cell_composition/230_comp_grid_per_animal_Cancer_cell.pdf",
+           pgrid_supplement, width = 4, height = 8)
+ ggsave_png(filename = "figures/230_scRNA_Cancer_cell_composition/230_comp_grid_per_animal_Cancer_cell.png",
+           pgrid_supplement, width = 4, height = 8)
+
+```
+
+dimensionality plot
+```{r}
+
+Idents(scrna_cell_seu)=scrna_cell_seu$MultimodalClusters
+dimPlot=function(scrna_seu, clrs){
+ plot_data <- FetchData(scrna_seu, c("UMAP_1", "UMAP_2", Idents(scrna_seu))) %>%
+  mutate(clusters = ordered(Idents(scrna_seu), levels = names(clrs))) 
+ p1 <- ggplot() + 
+    geom_point(aes(UMAP_1, UMAP_2, color = clusters), size = 0.01,
+            data = plot_data) + 
+    scale_color_manual(values = clrs) +
+    guides(color = guide_legend(override.aes = list(size=2, alpha=1))) +
+    NoAxes() +
+    coord_fixed()
+ return(p1)
+ print(p1)
+}
+
+
+dimPlot(scrna_seu = scrna_cell_seu, clrs=clrs$cell_type)
+
+```
+
+
+
+# GLM
+
+```{r}
+scrna_cell_seu=Tumor
+## join data
+scrna_cell_tbl <- scrna_cell_seu@meta.data
+scrna_cell_tbl$cell_id <- rownames(scrna_cell_seu@meta.data)
+
+```
+
+```{r}
+
+heatmap_layers <- list(
+  scale_fill_gradient2(low = scales::muted("blue"), high = scales::muted("red"), 
+                       na.value = "grey10", 
+                       ),
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        axis.ticks = element_blank(),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        plot.margin = margin(0, 0, 0, 0),
+        strip.text = element_blank())
+)
+
+```
+
+# Cell type GLM {.tabset}
+
+```{r}
+scrna_cell_tbl$cell_type=scrna_cell_tbl$MultimodalClusters
+scrna_cell_type_sample_tbl <- scrna_cell_tbl %>%
+  mutate(cell_type = as.character(cell_type),
+         sample_id = orig.ident,
+         strain = exp) %>%
+  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  group_by(sample_id, strain, cell_type) %>%
+  summarize(cell_type_count = n_distinct(cell_id)) %>% 
+  mutate(
+      other_cell_type_count = sum(cell_type_count) - cell_type_count,
+      total_cell_type_count = sum(cell_type_count),
+      cell_type_proportion = cell_type_count/total_cell_type_count*100
+      ) %>%
+  ungroup 
+
+```
+
+```{r}
+
+data <- list()
+formulas <- list()
+models <- list()
+strain_emm <- list()
+site_emm <- list()
+sort_emm <- list()
+sort_signature_emm <- list()
+sort_site_emm <- list()
+
+```
+
+```{r}
+
+data[["scRNA"]] <- scrna_cell_type_sample_tbl
+formulas[["scRNA"]] <-cbind(cell_type_count, other_cell_type_count) ~ cell_type * strain
+models[["scRNA"]] <- glm(formula = formulas[["scRNA"]], family = binomial(link = 'logit'), data = data[["scRNA"]])
+
+strain_emm[["scRNA"]] <- emmeans(models[["scRNA"]], specs = eff ~ strain | cell_type, type = "response", tran = "logit", adjust = "bonferroni")
+strain_odds <- strain_emm[["scRNA"]]$contrasts %>%
+  rbind() %>%
+  as.data.frame()
+
+```
+
+## Strain contrasts
+
+```{r, fig.width = 3.8, fig.height = 5.5, results = "asis"}
+
+clrs$cell_type_naila=clrs$cell_type
+
+plot_data <- strain_odds %>% 
+  add_column(contrast_variable = "Strain") %>%
+  mutate(p.value = ifelse(p.value < 1E-100, 1E-100, p.value)) %>%
+  mutate(contrast = str_remove(contrast, " effect")) %>%
+  mutate(contrast = str_remove(contrast, "\\(")) %>%
+  mutate(contrast = str_remove(contrast, "\\)")) %>%
+  # mutate(contrast = ordered(contrast, levels = c(names(clrs$consensus_signature), names(clrs$tumor_supersite)))) %>%
+  # mutate(cluster_label = ordered(cluster_label, levels = names(clrs$cluster_label$Ovarian.cancer.super))) %>%
+  mutate(log2.odds.ratio = log2(odds.ratio)) %>%
+  mutate(log2.odds.ratio = ifelse(log2.odds.ratio > 1.5, 1.5, log2.odds.ratio),
+         log2.odds.ratio = ifelse(log2.odds.ratio < -1.5, -1.5, log2.odds.ratio))
+
+p_odds_ratio <- plot_data %>%
+  # filter(p.value < 1E-20) %>%
+  # filter(SE < 0.15) %>%
+  ggplot(aes(x = contrast, y = cell_type, color = log2.odds.ratio, size = -log10(p.value))) +
+  geom_point() +
+  scale_color_gradientn(
+    colors = rev(brewer.pal(9, "RdBu")),
+    limits = c(-1.5, 1.5),
+    labels = c("≤-1.5", 0, "≥1.5"),
+    breaks = c(-1.5, 0, 1.5)
+  ) +
+  scale_size_continuous(
+    limits = c(0, 100),
+    breaks = c(0, 50, 100),
+    labels = c(0, 50, 100)
+  ) +
+  scale_y_discrete(drop=FALSE) +
+  theme(
+    axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    legend.title = element_text(size = 14),
+    legend.direction = "horizontal",
+    legend.position = "top",
+    legend.box = "horizontal",
+    panel.background = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "plain", size = 14),
+    strip.background = element_blank()#,
+    # strip.text.x = element_blank()
+  ) +
+  guides(color = guide_colorbar(title.position="top", title.hjust = 0.5, title.vjust = 0),
+         size = guide_legend(title.position="top", title.hjust = 0.5, title.vjust = 0)) +
+  labs(title = NULL, x = NULL, y = NULL, color = 'log2(odds ratio)', size = "\n-log10(p value)") +
+  facet_grid(. ~ contrast_variable, scales = "free", space = "free", switch = "x")
+
+p_signature_anno <- plot_data %>% 
+  distinct(contrast, contrast_variable, .keep_all = T) %>% 
+  ggplot() +
+  geom_tile(aes(x=contrast, y=0, fill = contrast)) +
+  heatmap_layers +
+  scale_fill_manual(values = clrs$strain) +
+  facet_grid(. ~ contrast_variable, scales = "free", space = "free") +
+  scale_x_discrete(position = "top") +
+  theme(#aspect.ratio = 1,
+        axis.text.x.top = element_text(hjust = 0, vjust = 0.5),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        strip.text = element_blank()) +
+  guides(fill = F)
+
+p_cluster_anno <- plot_data %>% 
+  mutate(facet_helper = "") %>% 
+  distinct(cell_type, facet_helper, .keep_all = T) %>% 
+  ggplot(aes(x=facet_helper, y=cell_type)) +
+  geom_tile(aes(fill = cell_type)) +
+  geom_point(color = "white", alpha = 0.5, size = 5) +
+  geom_text(aes(label = as.numeric(cell_type))) +
+  heatmap_layers +
+  scale_fill_manual(values = clrs$cell_type_naila) +
+  scale_x_discrete(drop = FALSE) +
+  facet_grid(facet_helper ~ ., scales = "free", space = "free") +
+  theme(# aspect.ratio = 1,
+        axis.text.x = element_blank(),
+        strip.text = element_blank()) +
+  guides(fill = F)
+
+p_left <-
+  plot_grid(
+    ggdraw(),
+    p_cluster_anno + theme(plot.margin = margin(t = 5, r = 0, b = 22, l = 6)),
+    nrow = 2,
+    align = "hv",
+    axis = "tbr",
+    rel_heights = c(0.45, 1)
+    # rel_widths = c(0.75, 1)
+  )
+
+p_right <-
+  plot_grid(
+    p_signature_anno + theme(plot.margin = margin(t = 0, r = 0, b = 0, l = 0)),
+    p_odds_ratio + theme(legend.position = "none", plot.margin = margin(t = 6, r = 0, b = 0, l = 0)),
+    nrow = 2,
+    align = "v",
+    axis = "lr",
+    rel_heights = c(0.45, 1)
+    # rel_widths = c(0.75, 1)
+  )
+
+p_scrna_odds_ratio <- plot_grid(
+  plot_grid(
+    p_left,
+    p_right,
+    nrow = 1,
+    align = "hv",
+    axis = "tblr",
+    rel_widths = c(1.55, 1)
+    ),
+  get_legend(p_odds_ratio),
+  ncol = 1,
+  rel_heights = c(1, 0.2)
+  )
+
+p_scrna_odds_ratio
+
+ggsave_pdf("figures/230_scRNA_Cancer_cell_composition/230_Cancer_cell_scrna_odds_ratio_strain.pdf", p_scrna_odds_ratio,
+           width = 4.35, height = 5.25)
+
+ggsave_png("figures/230_scRNA_Cancer_cell_composition/230_Cancer_cell_scrna_odds_ratio_strain.png", p_scrna_odds_ratio,
+          width = 4.35, height = 5.25)
+
+```
+
