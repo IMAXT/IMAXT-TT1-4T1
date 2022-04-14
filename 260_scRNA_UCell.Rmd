@@ -1,0 +1,245 @@
+---
+title: "260_scRNA_UCell"
+output: html_document
+---
+
+```{r}
+library(stringr)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(cowplot)
+library(viridis)
+library(Seurat)
+library(ggrepel)
+source("src/utilities.R")
+source("src/global_vars.R")
+```
+
+
+```{r}
+seur <- readRDS("/home/user/Shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+data.seurat=seur
+```
+
+
+# Ucell signature scores
+using cellAssign markers from this publication
+```{r, fig.height=20, fig.width=20}
+
+library(UCell)
+shahlabMainCellAssignMarkers <- read_excel("../Cite/data/refrence/shahlabMainCellAssignMarkers.xlsx")
+
+markers=as.list(shahlabMainCellAssignMarkers)
+
+index=list()
+for (i in 1:length(markers)){
+  index[[i]]=markers[[i]][!is.na(markers[[i]])]
+}
+names(index)=colnames(shahlabMainCellAssignMarkers)
+
+# convert to mouse gene names
+# Basic function to convert human to mouse gene names
+convertHumanGeneList <- function(x){
+require("biomaRt")
+human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+humanx <- unique(genesV2[, 2])
+# Print the first 6 genes found to the screen
+print(head(humanx))
+return(humanx)
+}
+
+httr::set_config(httr::config(ssl_verifypeer = FALSE))
+finalList=list()
+for( i in 1:length(index)){
+  finalList[[i]]=convertHumanGeneList(index[[i]])
+}
+
+names(finalList)=colnames(shahlabMainCellAssignMarkers)
+
+featnames=unlist(lapply(names(finalList), function(x)(paste0(x,"_UCell"))))
+DefaultAssay(data.seurat)="RNA"
+data.seurat <- AddModuleScore_UCell(data.seurat, features = finalList, ncores = 4)
+
+VlnPlot(data.seurat, features = featnames, pt.size = 0)
+```
+
+
+save th plot
+```{r}
+p1=VlnPlot(data.seurat, features = featnames, pt.size = 0)
+ggsave_pdf(filename = "figures/260_scRNA_UCell/PaperCellAssignMajorCelltypes.pdf",
+           p1, width = 18, height = 15)
+
+```
+
+# Ucell with Myeliod Markers igancio's paper 
+```{r, , fig.height=20, fig.width=20}
+shahlabMainCellAssignMarkers <- read_excel("../Cite/data/refrence/MayeloidMarkersShah.xlsx")
+
+markers=as.list(shahlabMainCellAssignMarkers)
+
+index=list()
+for (i in 1:length(markers)){
+  index[[i]]=markers[[i]][!is.na(markers[[i]])]
+}
+names(index)=colnames(shahlabMainCellAssignMarkers)
+httr::set_config(httr::config(ssl_verifypeer = FALSE))
+convertHumanGeneList <- function(x){
+require("biomaRt")
+human=useEnsembl("ensembl","hsapiens_gene_ensembl", mirror = "useast")
+mouse=useEnsembl("ensembl","mmusculus_gene_ensembl", mirror = "useast")
+#human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+#mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+humanx <- unique(genesV2[, 2])
+# Print the first 6 genes found to the screen
+print(head(humanx))
+return(humanx)
+}
+finalList=list()
+for( i in 1:length(index)){
+  finalList[[i]]=convertHumanGeneList(index[[i]])
+}
+
+names(finalList)=colnames(shahlabMainCellAssignMarkers)
+
+featnames=unlist(lapply(names(finalList), function(x)(paste0(x,"_UCell"))))
+DefaultAssay(data.seurat)="RNA"
+
+
+data.seurat <- AddModuleScore_UCell(data.seurat, features = finalList, ncores = 4)
+
+p2=VlnPlot(data.seurat, features = featnames, pt.size = 0)
+p2
+```
+
+with multimodal clusters
+
+```{r, , fig.height=20, fig.width=20}
+Idents(data.seurat)=data.seurat$cell_type
+Macro=subset(data.seurat, idents="Macrophage")
+Idents(Macro)=Macro$MultimodalClusters
+p3=VlnPlot(Macro, features = featnames, pt.size = 0)
+p3
+```
+
+
+save th plotS
+```{r}
+
+ggsave_pdf(filename = "figures/260_scRNA_UCell/PaperMyeloidMacrophages.pdf",
+           p3, width = 18, height = 15)
+
+```
+
+# UCell on my Markers List
+
+```{r, fig.height=20, fig.width=20}
+
+# my list of markers
+myList=list()
+Updatedmarkersmatrix <- read_csv("../Cite/data/refrence/Updatedmarkersmatrix.csv")
+Updatedmarkersmatrix=data.frame(Updatedmarkersmatrix)
+rownames(Updatedmarkersmatrix)=Updatedmarkersmatrix$...1
+Updatedmarkersmatrix$...1=NULL
+
+ind=list()
+for ( i in 1:ncol(Updatedmarkersmatrix)){
+  #ind[[i]]=which(Updatedmarkersmatrix%>%dplyr::select(colnames(Updatedmarkersmatrix)[i])>0)
+  myList[[i]]=rownames(Updatedmarkersmatrix[which(Updatedmarkersmatrix%>%dplyr::select(colnames(Updatedmarkersmatrix)[i])>0),])
+}
+names(myList)=colnames(Updatedmarkersmatrix)
+length(myList)# 22 sets
+
+featnames=unlist(lapply(names(myList), function(x)(paste0(x,"_UCell"))))
+#DefaultAssay(integrated)="RNA"
+data.seurat <- AddModuleScore_UCell(data.seurat, features = myList, ncores = 4)
+
+p4=VlnPlot(data.seurat, features = featnames, pt.size = 0)
+p4
+```
+
+
+```{r, fig.height=25, fig.width=30}
+Idents(data.seurat)=data.seurat$MultimodalClusters
+
+p5=VlnPlot(data.seurat, features = featnames, pt.size = 0)
+p5
+
+```
+
+```{r}
+
+ggsave_pdf(filename = "figures/260_scRNA_UCell/CellAssignMarkers.pdf",
+           p5, width = 25, height = 25)
+
+```
+
+
+
+# Compare labels
+
+```{r, fig.height=10, fig.width=10}
+tab=table(seur$MultimodalClusters, seur$cell_type)
+tab <- tab/rowSums(tab)
+p6=pheatmap(tab, color=viridis::viridis(100), cluster_cols=FALSE, cluster_rows=FALSE, display_numbers=T,
+         number_color="white")
+```
+
+```{r, fig.height=10, fig.width=10}
+tab=table(seur$cell_type, seur$cellassign)
+tab <- tab/rowSums(tab)
+p7=pheatmap(tab, color=viridis::viridis(100), cluster_cols=FALSE, cluster_rows=FALSE, display_numbers=T,
+         number_color="white")
+p7
+```
+the cell assign marker panel i used here wasn't good enough, it didn't include DC markers for example and included many markers, it was abit slow therefore i didn't rerun. Aslo i noticed here that although i included proliferative markers the Cycling cells were classified for TumorMetastaticHigh. this label i just took it from previous NSG T1data I clustered before.
+
+saving the heatmaps 
+
+```{r}
+#library(grid)
+pdf("figures/260_scRNA_UCell/CellAssignVsMarkersBased.pdf", height = 8, width = 8.5, paper = "letter")
+
+setHook("grid.newpage", function() pushViewport(viewport(x=1,y=1,width=0.9, height=0.9, name="vp", just=c("right","top"))), action="prepend")
+tab=table(seur$cell_type, seur$cellassign)
+tab <- tab/rowSums(tab)
+pheatmap(tab, color=viridis::viridis(100), cluster_cols=FALSE, cluster_rows=FALSE, display_numbers=T,
+         number_color="white")
+setHook("grid.newpage", NULL, "replace")
+grid.text("CellAssign", y=-0.07, gp=gpar(fontsize=16))
+grid.text("MarkersBased", x=-0.07, rot=90, gp=gpar(fontsize=16))
+dev.off()
+
+```
+
+```{r}
+#library(grid)
+pdf("figures/260_scRNA_UCell/SubClustersVsCellType.pdf", height = 8, width = 8.5, paper = "letter")
+
+setHook("grid.newpage", function() pushViewport(viewport(x=1,y=1,width=0.9, height=0.9, name="vp", just=c("right","top"))), action="prepend")
+tab=table(seur$MultimodalClusters, seur$cell_type)
+tab <- tab/rowSums(tab)
+pheatmap(tab, color=viridis::viridis(100), cluster_cols=FALSE, cluster_rows=FALSE, display_numbers=T,
+         number_color="white")
+setHook("grid.newpage", NULL, "replace")
+grid.text("CellType", y=-0.07, gp=gpar(fontsize=16))
+grid.text("SubClusters", x=-0.07, rot=90, gp=gpar(fontsize=16))
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
