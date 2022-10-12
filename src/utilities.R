@@ -235,8 +235,72 @@ RenameGenesSeurat <- function(obj = ls.Seurat[[i]], newnames = HGNC.updated[[i]]
 }
 
 
-# this is how i saved the inpute for cellphoneDB
-#write.csv(genesV2,"geneIDs.csv")
+# Progeny analysis functions
 
+Prog=function(integrated=Tumor){
+  CellsClusters <- data.frame(Cell = names(Idents(integrated)), 
+                              CellType = as.character(Idents(integrated)),
+                              stringsAsFactors = FALSE)
+  
+  prog=progeny(integrated, scale=FALSE, organism="Mouse", top=500, perm=1, 
+               return_assay = TRUE)
+  
+  prog <-ScaleData(prog, assay = "progeny") 
+  progeny_scores_df <- 
+    as.data.frame(t(GetAssayData(prog, slot = "scale.data", 
+                                 assay = "progeny"))) %>%
+    rownames_to_column("Cell") %>%
+    gather(Pathway, Activity, -Cell) 
+  
+  ## We match Progeny scores with the cell clusters.
+  progeny_scores_df <- inner_join(progeny_scores_df, CellsClusters)
+  
+  ## We summarize the Progeny scores by cellpopulation
+  summarized_progeny_scores <- progeny_scores_df %>% 
+    group_by(CellType, Pathway) %>%
+    summarise( avg = mean(Activity), std = sd(Activity))
+  
+  ## We prepare the data for the plot
+  summarized_progeny_scores_df <- summarized_progeny_scores %>%
+    dplyr::select(-std) %>%   
+    spread(Pathway, avg) %>%
+    data.frame(row.names = 1, check.names = FALSE, stringsAsFactors = FALSE) 
+  
+  paletteLength = 100
+  myColor = colorRampPalette(c("Darkblue", "white","red"))(paletteLength)
+  
+  progenyBreaks = c(seq(min(summarized_progeny_scores_df), 0, 
+                        length.out=ceiling(paletteLength/2) + 1),
+                    seq(max(summarized_progeny_scores_df)/paletteLength, 
+                        max(summarized_progeny_scores_df), 
+                        length.out=floor(paletteLength/2)))
+  progeny_hmap = pheatmap(t(summarized_progeny_scores_df[,-1]),fontsize=14, 
+                          fontsize_row = 10, 
+                          color=myColor, breaks = progenyBreaks, 
+                          main = "PROGENy (500)", angle_col = 90,
+                          treeheight_col = 0,  border_color = NA)
+  
+  print(progeny_hmap)
+  return(summarized_progeny_scores_df)
+}
+
+
+Get_df=function(df_scores){
+  balbClusters=df_scores[grepl("_balb", rownames(df_scores)),]
+  balbClusters$multimodal=gsub("_balb", "", rownames(balbClusters))
+  balbClusters$Exp=rep("balb",nrow(balbClusters))
+  
+  nsgClusters=df_scores[grepl("_nsg", rownames(df_scores)),]
+  nsgClusters$multimodal=gsub("_nsg", "", rownames(nsgClusters))
+  nsgClusters$Exp=rep("nsg",nrow(nsgClusters))
+  df=rbind(balbClusters,nsgClusters)
+  return(df)
+}
+
+
+
+
+
+  
 
 

@@ -1,0 +1,200 @@
+---
+title: "240_Macrophage_pathway"
+output: html_document
+---
+
+
+
+```{r}
+source("src/utilities.R")
+set.seed(123)
+#library(scDblFinder)
+#library(batchelor)
+```
+
+
+```{r}
+#read cFIT integrated objects
+ints.clus=readRDS("intsClus.rds")
+
+# load older obnject
+seur <- readRDS("/home/user/Shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+
+# split by celltypes of interest
+objs=SplitObject(seur, split.by = "cell_type")
+types=names(objs)[c(3,4,6,7)]
+int=ints.clus[["Macrophage"]]
+seur=objs[["Macrophage"]]
+```
+
+
+```{r}
+library(scclusteval)
+#compare with previous annotation
+#drop emty levels from meta data of older object
+dropempty=function(seur=seur, label="MultimodalClusters"){
+  seur@meta.data[,label]<-droplevels(seur@meta.data[,label])
+  return(seur)
+}
+
+seur=dropempty(seur=seur, label="MultimodalClusters")
+int=dropempty(seur=int, label="MultimodalClusters")
+
+PairWiseJaccardSetsHeatmap(seur$MultimodalClusters, int$dsb_knn_res.0.5)
+PairWiseJaccardSetsHeatmap(seur$MultimodalClusters, int$dsb_knn_res.1)
+PairWiseJaccardSetsHeatmap(seur$MultimodalClusters, int$dsb_knn_res.1.5)
+```
+
+# DE
+
+```{r, fig.width=30, fig.height=30}
+#read the saved object again to reproduce results for knitting
+#DefaultAssay(integrated)="RNA"
+#integrated=ScaleData(integrated)
+Idents(int)= int$dsb_knn_res.1
+markers <- FindAllMarkers(int, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, test.use ="wilcox", verbose = T)
+top10<-markers%>%group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+p1=DoHeatmap(int,features = top10$gene)
+p1
+```
+
+
+# DE with RNA values
+```{r, fig.width=30, fig.height=30}
+#read the saved object again to reproduce results for knitting
+DefaultAssay(int)="RNA"
+#integrated=ScaleData(integrated)
+Idents(int)= int$dsb_knn_res.1
+markers <- FindAllMarkers(int, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, test.use ="wilcox", verbose = T)
+top10<-markers%>%group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+p1=DoHeatmap(int,features = top10$gene)
+p1
+```
+
+
+
+
+```{r, fig.width=10, fig.height=10}
+tab=table(Truth=seur$MultimodalClusters, new=int$dsb_knn_res.1)
+  tab <- tab/rowSums(tab)
+  pheatmap(tab, color=viridis::viridis(100), cluster_cols=FALSE, cluster_rows=FALSE, display_numbers=T,
+         number_color="white")
+
+```
+
+
+# UCell
+
+```{r, fig.width=15, fig.height=10}
+readGenes=function(txt=txt){
+  s=read.delim(text=txt, header=F , sep=",")
+  s=as.character(s[1, ])
+  return(s)
+  
+}
+  
+
+
+TAMs=list(
+  IFN.TAM="Ccl2,Ccl7,Ccl8,Cd274,Cxcl9,Cxcl10,Cxcl11,Ifit1,Ifit2,Ifit3,Ifitm1,Ifitm3,Il7r,Isg15,Nos2,Rsad2,Tnfsf10,Stat1",
+    Inflam.TAM="Cxcl1,Cxcl2,Cxcl3,Cxcl5,Cxcl8,Ccl20,Ccl3l1,Il1rn,Il1b,G0s2,Inhba,Spp1",
+  LA.TAM="Acp5,Apoc1,Apoe,C1qa,C1qaB,C1qaC,Ccl18,Ccl8,Cd163,Cd206,Cd36,Cd63,Ctsb,Ctsd,Ctsl,Cxcl9,Fabp5,Folr2,Gpnmb,Lgals3,Macro,Mrc1,Trem2",
+  Angio.TAM="Arg1,Adam8,Bnip3,Mif,Slc2a1",
+  Reg.TAM="Apoe,Arg1,C1qa,Ccl2,Cd63,Clec4d,Cx3cr1,Gpnmb,Hilpda,Hmox1,Il7r,Mrc1,Pf4,Spp1,Trem2,Vegfa,Itga4",
+  prolif.TAM="Cdk1,Mki67,Stmn1,Top2a,Tubb"
+  
+  )
+
+TAMs=lapply(TAMs,function(x)(readGenes(txt=x)))
+
+###########
+
+
+library(UCell)
+
+
+markers=TAMs
+
+# index=list()
+# for (i in 1:length(markers)){
+#   index[[i]]=markers[[i]][!is.na(markers[[i]])]
+# }
+# names(index)=colnames(shahlabMainCellAssignMarkers)
+
+finalList=TAMs
+
+featnames=unlist(lapply(names(finalList), function(x)(paste0(x,"_UCell"))))
+data.seurat=int
+DefaultAssay(data.seurat)="RNA"
+data.seurat <- AddModuleScore_UCell(data.seurat, features = finalList, ncores = 4)
+
+VlnPlot(data.seurat, features = featnames, pt.size = 0)
+
+
+```
+
+
+
+```{r}
+lapply(featnames, function(x)(FeaturePlot(data.seurat, features = x)))
+```
+
+
+```{r, fig.width=10, fig.height=10}
+DefaultAssay(data.seurat)="cFIT"
+
+data.seurat<- RunUMAP(data.seurat, nn.name = "dsb_wnn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_")
+
+DimPlot(data.seurat, label = T)
+```
+
+
+
+```{r}
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+plotCombo(data.seurat@meta.data,dsb_knn_res.1 , exp)
+
+```
+
+```{r}
+DefaultAssay(data.seurat)<-"RNA"
+FeaturePlot(data.seurat, features = c( "Lyve1", "Adgre1", "Itgam"))
+
+```
+
+
+```{r}
+DT::datatable(markers, extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = list("copy", "excel", "csv", "pdf")))
+```
+
+# check cancer markers
+
+```{r}
+int.cancer=ints.clus[["Cancer.cell"]]
+seur.cancer=objs[["Cancer.cell"]]
+Idents(int.cancer)=int.cancer$MultimodalClusters
+DimPlot(int.cancer, label=T)
+
+```
+```{r}
+FeaturePlot(int.cancer, features =c( "H2-D1", "H2-Eb1", "Car9", "Casp3"))
+```
+
+
+
+
+
+
+
+

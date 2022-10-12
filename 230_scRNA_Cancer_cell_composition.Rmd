@@ -71,7 +71,9 @@ scrna_sample_tbl <- scrna_cell_tbl %>%
   mutate(cell_type = as.character(cell_type),
          sample_id = orig.ident,
          strain = exp) %>%
-  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  mutate(sample_id = recode(sample_id, `SITTD9` = "Balb/C R1", `SITTE9` = "Balb/C R2", `SITTF9` = "Balb/C R3", 
+                       `SITTA9` = "NSG R1", `SITTB9` = "NSG R2", `SITTC9` = "NSG R3"),
+    strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
   group_by(sample_id, strain, cell_type) %>%
   summarize(cell_type_count = n_distinct(cell_id)) %>% 
   mutate(
@@ -82,6 +84,9 @@ scrna_sample_tbl <- scrna_cell_tbl %>%
   ungroup 
 
 ```
+
+
+
 
 ## scRNA compositions {.tabset}
 
@@ -100,7 +105,9 @@ scrna_sample_tbl <- scrna_cell_tbl %>%
          sample_id = orig.ident,
          strain = exp,
          sort_short_x = "") %>%
-  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  mutate( sample_id = recode(sample_id, `SITTD9` = "Balb/C R1", `SITTE9` = "Balb/C R2", `SITTF9` = "Balb/C R3", 
+                       `SITTA9` = "NSG R1", `SITTB9` = "NSG R2", `SITTC9` = "NSG R3"),
+    strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
   group_by(sample_id, strain, cell_type, sort_short_x) %>%
   tally() %>%
   ungroup() %>%
@@ -239,7 +246,9 @@ scrna_cell_type_sample_tbl <- scrna_cell_tbl %>%
   mutate(cell_type = as.character(cell_type),
          sample_id = orig.ident,
          strain = exp) %>%
-  mutate(strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
+  mutate( sample_id = recode(sample_id, `SITTD9` = "Balb/C R1", `SITTE9` = "Balb/C R2", `SITTF9` = "Balb/C R3", 
+                       `SITTA9` = "NSG R1", `SITTB9` = "NSG R2", `SITTC9` = "NSG R3"),
+    strain = recode(strain, `balb` = "Balb/C", `nsg` = "NSG")) %>%
   group_by(sample_id, strain, cell_type) %>%
   summarize(cell_type_count = n_distinct(cell_id)) %>% 
   mutate(
@@ -404,11 +413,11 @@ p_scrna_odds_ratio <- plot_grid(
 
 p_scrna_odds_ratio
 
-ggsave_pdf("figures/230_scRNA_Cancer_cell_composition/230_Cancer_cell_scrna_odds_ratio_strain.pdf", p_scrna_odds_ratio,
-           width = 4.35, height = 5.25)
-
-ggsave_png("figures/230_scRNA_Cancer_cell_composition/230_Cancer_cell_scrna_odds_ratio_strain.png", p_scrna_odds_ratio,
-          width = 4.35, height = 5.25)
+# ggsave_pdf("figures/230_scRNA_Cancer_cell_composition/230_Cancer_cell_scrna_odds_ratio_strain.pdf", p_scrna_odds_ratio,
+#            width = 4.35, height = 5.25)
+# 
+# ggsave_png("figures/230_scRNA_Cancer_cell_composition/230_Cancer_cell_scrna_odds_ratio_strain.png", p_scrna_odds_ratio,
+#           width = 4.35, height = 5.25)
 
 ```
 

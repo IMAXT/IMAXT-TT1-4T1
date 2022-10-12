@@ -1,0 +1,392 @@
+---
+title: "progny"
+output: html_document
+---
+
+```{r}
+source("src/utilities.R")
+```
+
+
+```{r}
+seur <- readRDS("/home/user/Shared/Notebooks/Naila/Cite/multimodalAnnotatedFinal.rds")
+```
+
+
+```{r}
+# compare major celltypes first
+
+seur$celltype.exp <- paste(Idents(seur), seur$exp, sep = "_")
+
+Idents(seur) <- "celltype.exp"
+DefaultAssay(seur)="RNA"
+tumor.DE<- FindMarkers(seur, ident.1 = "Cancer.cell_balb", ident.2 = "Cancer.cell_nsg", verbose = T)
+```
+
+```{r}
+#volcano plot of DE results
+top20<-tumor.DE%>% top_n(n = 10, wt = avg_log2FC)
+ggplot(tumor.DE, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
+  geom_point(size = 0.6, aes(color = p_val_adj < 0.05))+
+  geom_text_repel(data = top20, aes(label = rownames(top20)), colour = 'red', size = 3, max.overlaps = Inf)+geom_vline(xintercept=c(1, -1))
+```
+
+there seems to be interesting DE genes, run enrichment on those
+
+# FGSEA
+```{r}
+markers=tumor.DE%>%rownames_to_column("gene")
+marker_list=list(markers)
+
+run_gene_enrichment <- function(marker_list, pathways_input){
+  
+  pathways<-readRDS(pathways_input)
+  # create a list of data frames for results of enrichmet per cluster/group
+  fgseaRes_list <- lapply(marker_list, function(List){ 
+    
+    # this extracts gene symbol and logFC from every cluster
+    List<-List[, grepl("gen", colnames(List)) | grepl("avg_log2FC", colnames(List))]
+    List$Gene<-toupper(List$gene)# cabiltalize mouse genes to map to human's
+    mm<-select(org.Hs.eg.db, keys = List$Gene, columns = "ENTREZID", keytype = "SYMBOL")
+    mm<-mm[!duplicated(mm$SYMBOL),]
+    List$ID<-mm$ENTREZID
+    List<-List[,c(4,2)]# rearrange so the gene IDs so they become the first column and the fold changes the 2nd, must for deframe function
+    
+    List_Rank<-deframe(List)
+    fgseaRes <- fgsea(pathways,List_Rank,minSize=15, maxSize=500)%>%arrange(-NES)
+    
+    return(fgseaRes)
+    
+  }) 
+
+  sig_pathways <- lapply(fgseaRes_list, function(x){
+    
+    x <- x[x$padj < 0.05 , c('pathway', 'pval', 'padj', 'NES', 'leadingEdge','size')] 
+    
+    return(x)
+    
+  })
+  
+  sig_pathways_name <- lapply(sig_pathways, function(x){x$pathway})
+  
+  output <- list(fgseaRes_list = fgseaRes_list, sig_pathways = sig_pathways, sig_pathways_name = sig_pathways_name)
+  
+  return(output)
+  
+}
+
+Gos<-run_gene_enrichment(marker_list=marker_list, pathways_input = "/data/meds1_a/jimaxt/shared/Notebooks/Naila/HsBpC5.RDS")
+
+names(Gos$fgseaRes_list)="Balb.Tumor"
+make_ge_plots <- function( fgsesRes_list, pathway_name, pthresh = 0.05, ntop = 10){
+  
+  clusters <- names(fgsesRes_list)
+  
+  plots <- lapply(clusters, function(cluster, fgsesRes_list, pthresh, ntop, pathway_name, y_text_size){
+    
+    # select top 10 significant pathways  
+    fgsesRes <- fgsesRes_list[[cluster]]
+    fgsesRes <- fgsesRes[fgsesRes$padj < pthresh , ]
+    fgsesRes <- top_n(fgsesRes, n = ntop, wt = abs(NES))
+    
+    #fgsesRes$pathway <- as.character(lapply(fgsesRes$pathway, function(pw) str_replace(pw, pattern = glue(pathway_name, "_"), "")))
+    
+    if(dim(fgsesRes)[1] > 0){
+      
+      plot <- ggplot(fgsesRes, aes(reorder(pathway, NES), NES)) +
+        geom_col(aes(fill=padj), width = 0.4) +
+        coord_flip() +
+        labs(x="Pathway", y="Normalized Enrichment Score",
+             title= paste("cluster", cluster, pathway_name,"pathways"))+theme_minimal()+
+        theme(text = element_text(face = "bold", color = "black",size = 10),
+              axis.text = element_text(face = "bold", color = "black",size =8))
+    
+      return(plot)
+      
+    } else{
+      
+      return(NULL)
+      
+    }
+    
+  }, fgsesRes_list= fgsesRes_list, pthresh = pthresh, ntop = ntop, pathway_name = pathway_name)
+  
+  plots <- plots[unlist(lapply(plots, function(plot) ! is.null(plot)))]# looks at plots list and keeps those ewntires that are not null
+  # unlist
+  return(plots)
+  
+}
+
+plots <- make_ge_plots(Gos$fgseaRes_list, pathway_name = "Go", pthresh = 0.05, ntop = 10)
+plots
+
+    
+```
+
+```{r}
+tumor.DE.Nsg<- FindMarkers(seur, ident.1 = "Cancer.cell_nsg",ident.2 = "Cancer.cell_balb", verbose = T)
+
+
+markers=tumor.DE.Nsg%>%rownames_to_column("gene")
+marker_list=list(markers)
+Gos<-run_gene_enrichment(marker_list=marker_list, pathways_input = "/data/meds1_a/jimaxt/shared/Notebooks/Naila/HsBpC5.RDS")
+
+names(Gos$fgseaRes_list)="Nsg.Tumor"
+plots <- make_ge_plots(Gos$fgseaRes_list, pathway_name = "Go", pthresh = 0.05, ntop = 10)
+plots
+
+```
+
+
+# progny on Tumor cells
+
+
+```{r, fig.width=10, fig.height=10}
+Idents(seur)="cell_type"
+table(Idents(seur))
+Tumor=subset(seur, idents="Cancer.cell")
+
+# switch to multimodal subclusters 
+Tumor@meta.data$MultimodalClusters=droplevels(Tumor@meta.data$MultimodalClusters)
+Idents(Tumor)=Tumor$MultimodalClusters
+# paste different conditions to compare progeny activity inthose
+
+Tumor$clusters.exp <- paste(Idents(Tumor), Tumor$exp, sep = "_")
+Idents(Tumor)="clusters.exp"
+table(Tumor$clusters.exp)
+
+Prog=function(integrated=Tumor){
+  CellsClusters <- data.frame(Cell = names(Idents(integrated)), 
+    CellType = as.character(Idents(integrated)),
+    stringsAsFactors = FALSE)
+
+prog=progeny(integrated, scale=FALSE, organism="Mouse", top=500, perm=1, 
+    return_assay = TRUE)
+
+prog <-ScaleData(prog, assay = "progeny") 
+progeny_scores_df <- 
+    as.data.frame(t(GetAssayData(prog, slot = "scale.data", 
+        assay = "progeny"))) %>%
+    rownames_to_column("Cell") %>%
+    gather(Pathway, Activity, -Cell) 
+
+## We match Progeny scores with the cell clusters.
+progeny_scores_df <- inner_join(progeny_scores_df, CellsClusters)
+
+## We summarize the Progeny scores by cellpopulation
+summarized_progeny_scores <- progeny_scores_df %>% 
+    group_by(CellType, Pathway) %>%
+    summarise( avg = mean(Activity), std = sd(Activity))
+
+## We prepare the data for the plot
+summarized_progeny_scores_df <- summarized_progeny_scores %>%
+    dplyr::select(-std) %>%   
+    spread(Pathway, avg) %>%
+    data.frame(row.names = 1, check.names = FALSE, stringsAsFactors = FALSE) 
+
+paletteLength = 100
+myColor = colorRampPalette(c("Darkblue", "white","red"))(paletteLength)
+
+progenyBreaks = c(seq(min(summarized_progeny_scores_df), 0, 
+                      length.out=ceiling(paletteLength/2) + 1),
+                  seq(max(summarized_progeny_scores_df)/paletteLength, 
+                      max(summarized_progeny_scores_df), 
+                      length.out=floor(paletteLength/2)))
+progeny_hmap = pheatmap(t(summarized_progeny_scores_df[,-1]),fontsize=14, 
+                        fontsize_row = 10, 
+                        color=myColor, breaks = progenyBreaks, 
+                        main = "PROGENy (500)", angle_col = 90,
+                        treeheight_col = 0,  border_color = NA)
+
+print(progeny_hmap)
+return(summarized_progeny_scores_df)
+}
+
+df_scores=Prog(Tumor)
+```
+
+
+
+
+
+
+
+
+
+
+```{r, fig.height=20, fig.width=20}
+
+Get_df=function(df_scores){
+  balbClusters=df_scores[grepl("_balb", rownames(df_scores)),]
+balbClusters$multimodal=gsub("_balb", "", rownames(balbClusters))
+balbClusters$Exp=rep("balb",nrow(balbClusters))
+
+nsgClusters=df_scores[grepl("_nsg", rownames(df_scores)),]
+nsgClusters$multimodal=gsub("_nsg", "", rownames(nsgClusters))
+nsgClusters$Exp=rep("nsg",nrow(nsgClusters))
+df=rbind(balbClusters,nsgClusters)
+return(df)
+}
+df=Get_df(df_scores)
+
+# make a list of dataframes to plot each pathway seprately
+dfs=lapply(colnames(df)[1:14], function(x)(df%>%dplyr::select(x, multimodal, Exp)))
+melted=lapply(dfs, function(x)(melt(x)))
+
+plots=lapply(melted, function(melted)(ggplot(melted, aes(x=multimodal, y=value, group=Exp)) + geom_line(aes(color=Exp))+geom_point(aes(color=Exp))+theme_classic()+facet_wrap(~variable)+
+                                        theme(axis.text.x = element_text(angle = 90, face = "bold"),
+                                              axis.text = element_text( size = 14 ),
+                                              strip.text = element_text(size = 20))))
+
+n <- length(plots)
+nCol <- floor(sqrt(n))
+do.call("grid.arrange", c(plots, ncol=nCol))
+
+```
+
+```{r}
+
+top50=getModel(organism = "Mouse", top = 50)
+top50NFkB=data.frame(top50[which(top50$NFkB>0),])%>%dplyr::select(NFkB)%>%arrange(-NFkB)
+
+integrated=Tumor
+
+CellsClusters <- data.frame(Cell = names(Idents(integrated)), 
+    CellType = as.character(Idents(integrated)),
+    stringsAsFactors = FALSE)
+
+prog=progeny(integrated, scale=FALSE, organism="Mouse", top=500, perm=1, 
+    return_assay = TRUE)
+
+scores=data.frame(prog@assays$progeny@data)
+scores[7,]
+y=t(scores[7,])
+head(y)
+
+sub=prog[rownames(top50NFkB),]
+Exp=data.matrix(t(sub@assays$RNA@data))
+
+sub$NFKB=data.frame(y)$NFkB
+head(Exp)
+
+x=Exp
+y=sub$NFKB
+
+head(data.frame(x))
+head(data.frame(y))
+```
+
+```{r}
+library(glmnet)
+
+#perform k-fold cross-validation to find optimal lambda value
+cv_model <- cv.glmnet(x, y, alpha = 1)
+
+#find optimal lambda value that minimizes test MSE
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+
+#produce plot of test MSE by lambda value
+plot(cv_model) 
+
+#find coefficients of best model
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+
+coefs=data.frame(coef(best_model))
+
+sum((coefs$s0>0))
+
+coefs%>%arrange(-s0)
+```
+interpreting model coefficient: The smaller the coefficient the less important it is or less variance it explains. 
+
+```{r}
+coefs%>%arrange(-s0)
+```
+
+
+
+
+
+```{r}
+ranked=coefs%>%arrange(-s0)
+CiteseqMarkersUpdated[which(CiteseqMarkersUpdated$genes%in%rownames(ranked)),]$genes
+
+panel[which(panel$`Gene name`%in%rownames(ranked)),]
+
+```
+
+
+
+```{r}
+DefaultAssay(seur)="RNA"
+FeaturePlot(seur, features = c("Icam1","Cd83"))
+DefaultAssay(seur)="dsb"
+FeaturePlot(seur, features = c("anti‐mouseCD54", "anti‐mouseCD83"))
+```
+
+
+
+
+
+
+
+
+# Macrophages progny
+
+```{r}
+Macro=subset(seur, idents="Macrophage")
+# switch to multimodal subclusters 
+Macro@meta.data$MultimodalClusters=droplevels(Macro@meta.data$MultimodalClusters)
+Idents(Macro)=Macro$MultimodalClusters
+# paste different conditions to compare progeny activity inthose
+
+Macro$clusters.exp <- paste(Idents(Macro), Macro$exp, sep = "_")
+Idents(Macro)="clusters.exp"
+
+## run progny
+df_scores=Prog(Macro)
+
+```
+```{r, fig.height=20, fig.width=20}
+df=Get_df(df_scores)
+
+# make a list of dataframes to plot each pathway seprately
+dfs=lapply(colnames(df)[1:14], function(x)(df%>%dplyr::select(x, multimodal, Exp)))
+melted=lapply(dfs, function(x)(melt(x)))
+plots=lapply(melted, function(melted)(ggplot(melted, aes(x=multimodal, y=value, group=Exp)) + geom_line(aes(color=Exp))+geom_point(aes(color=Exp))+theme_classic()+facet_wrap(~variable)+
+                                        theme(axis.text.x = element_text(angle = 90, face = "bold"),
+                                              axis.text = element_text( size = 14 ),
+                                              strip.text = element_text(size = 20))))
+
+n <- length(plots)
+nCol <- floor(sqrt(n))
+do.call("grid.arrange", c(plots, ncol=nCol))
+```
+
+```{r}
+Idents(seur)="cell_type"
+table(Idents(seur))
+CAF=subset(seur, idents="Fibroblast")
+
+# switch to multimodal subclusters 
+CAF@meta.data$MultimodalClusters=droplevels(CAF@meta.data$MultimodalClusters)
+Idents(CAF)=CAF$MultimodalClusters
+# paste different conditions to compare progeny activity inthose
+table(CAF$clusters.exp)
+CAF$clusters.exp <- paste(Idents(CAF), CAF$exp, sep = "_")
+Idents(CAF)="clusters.exp"
+df_scores=Prog(CAF)
+```
+
+
+
+
+
+
+
+
+
+
+
